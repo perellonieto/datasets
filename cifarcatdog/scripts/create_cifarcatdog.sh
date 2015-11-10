@@ -5,13 +5,16 @@
 module use-append ${HOME}/privatemodules
 module load caffe/2015.10.28
 
-EXAMPLE=../db
-DATA=../downloads
+DIR="$( cd "$(dirname "$0")" ; pwd -P )"
+EXAMPLE="${DIR}/../db"
+DATA="${DIR}/../downloads"
+
+mkdir -p ${EXAMPLE}
+mkdir -p ${DATA}
 
 BACKEND="lmdb"
 
 echo "Creating ${BACKEND}..."
-mkdir -p ${EXAMPLE}
 
 rm -rf $EXAMPLE/cifarcatdog_train_$BACKEND
 rm -rf $EXAMPLE/cifarcatdog_test_$BACKEND
