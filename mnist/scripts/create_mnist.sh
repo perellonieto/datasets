@@ -6,8 +6,12 @@
 module use-append ${HOME}/privatemodules
 module load caffe/2015.10.28
 
-EXAMPLE=../db
-DATA=../downloads/
+DIR="$( cd "$(dirname "$0")" ; pwd -P )"
+EXAMPLE="${DIR}/../db"
+DATA="${DIR}/../downloads"
+
+mkdir -p ${EXAMPLE}
+mkdir -p ${DATA}
 
 BACKEND="lmdb"
 
