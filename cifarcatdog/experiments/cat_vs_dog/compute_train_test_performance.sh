@@ -8,9 +8,11 @@ set -o nounset
 ../../scripts/explore_lmdb.py features/test/prob -csv features/test/prob.csv
 
 train_accuracy=`./compute_accuracy.py features/train/prob.csv \
-                ../../db/train_label.csv`
+                db/train_label.csv`
 test_accuracy=`./compute_accuracy.py features/test/prob.csv \
-               ../../db/test_label.csv`
+               db/test_label.csv`
+
+mkdir -p summary
 
 printf 'Train accuracy:\t%s\nTest accuracy:\t%s\n' ${train_accuracy} \
        ${test_accuracy} > summary/performance.txt
