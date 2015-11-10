@@ -20,9 +20,23 @@ export GLOG_log_dir=${LOG}
 
 SNAPSHOT=`ls ${SNAPSHOTS} | grep caffemodel | sort -V | tail -1`
 
-BLOBS=`./caffe_get_blobs.py model/train_test.prototxt`
-for blob in $BLOBS; do
-    rm -rf "features/${blob}"
+MODELS=('train' 'test')
+MINI_BATCHES=(100 20)
+
+for i in "${!MODELS[@]}"
+do
+    model="${MODELS[$i]}"
+    mini_batches="${MINI_BATCHES}"
+    BLOBS=( $(./caffe_get_blobs.py model/${model}.prototxt) )
+    BLOBS_COMASEPARATED=$(IFS=,; echo "${BLOBS[*]}")
+    BLOBS_DIRS=( "${BLOBS[@]/#/features\/${model}\/}" )
+    BLOBS_DIRS_COMA=$(IFS=,; echo "${BLOBS_DIRS[*]}")
+
+    echo "Removing old blobs dirs"
+    rm -rf "${BLOBS_DIRS[@]}"
+
+    mkdir -p features/${model}
     extract_features.bin "${SNAPSHOTS}/${SNAPSHOT}" \
-        "model/train_test.prototxt" $blob "features/${blob}" 10 lmdb
+        "model/${model}.prototxt" ${BLOBS_COMASEPARATED} \
+        ${BLOBS_DIRS_COMA} ${mini_batches} lmdb
 done
