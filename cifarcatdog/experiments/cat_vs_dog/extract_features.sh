@@ -26,7 +26,7 @@ MINI_BATCHES=(100 20)
 for i in "${!MODELS[@]}"
 do
     model="${MODELS[$i]}"
-    mini_batches="${MINI_BATCHES}"
+    mini_batches="${MINI_BATCHES[$i]}"
     BLOBS=( $(./caffe_get_blobs.py model/${model}.prototxt) )
     BLOBS_COMASEPARATED=$(IFS=,; echo "${BLOBS[*]}")
     BLOBS_DIRS=( "${BLOBS[@]/#/features\/${model}\/}" )
