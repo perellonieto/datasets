@@ -4,9 +4,6 @@ layer {
   type: "Data"
   top: "data"
   top: "label"
-  include {
-    phase: TEST
-  }
   transform_param {
     mean_file: "db/mean.binaryproto"
   }
@@ -190,9 +187,6 @@ layer {
   bottom: "ip1"
   bottom: "label"
   top: "accuracy"
-  include {
-    phase: TEST
-  }
 }
 layer {
   name: "loss"
