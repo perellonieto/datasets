@@ -1,6 +1,5 @@
 #!/usr/bin/Rscript
-library(Rtsne)
-library(MASS)
+require(MASS)
 
 # Defaults
 blob.name <- 'prob'
@@ -64,20 +63,31 @@ X <- read.csv(paste(blob.name, '.csv', sep=''), sep=',', header=FALSE,
 #' @param file_prefix A string to add as a prefix to the generated PDF file
 export_two_class_knn_distances <- function(X, k, labels, class_names,
                                            file_prefix) {
-    require(spatstat)
-    nndis <- nndist(X, k=c(1:k))
-
+    require(FNN)
     require(ggplot2)
-    for(i in c(2:k)){
-        nndis_1 <- data.frame(distance=rowSums(nndis[,1:i])[labels==1],
+    nndis <- knn.dist(X, k=k)
+    for(i in c(1:k)){
+        nndis_1 <- data.frame(distance=rowMeans(nndis[,1:i, drop=FALSE])[labels==1],
                               class=class_names[1])
-        nndis_2 <- data.frame(distance=rowSums(nndis[,1:i])[labels==2],
+        nndis_2 <- data.frame(distance=rowMeans(nndis[,1:i, drop=FALSE])[labels==2],
                               class=class_names[2])
         nndis_all <- rbind(nndis_1, nndis_2)
 
-        ggplot(nndis_all, aes(distance, fill=class)) +
-              geom_density(alpha=0.2) + scale_x_log10()
-        ggsave(paste(file_prefix, '_', i, 'nn_sum.pdf', sep=''))
+        ggplot(nndis_all, aes(distance, fill=class),
+               environment=environment()) +
+               geom_histogram(position='dodge') +
+               scale_x_log10() + theme(legend.position='top') +
+               ggtitle(sprintf('%s mean distance to %i-nn', file_prefix, i))
+
+        ggsave(paste(file_prefix, '_hist_', i, 'nn_mean.pdf', sep=''))
+
+        ggplot(nndis_all, aes(distance, fill=class),
+               environment=environment()) +
+               geom_density(alpha=0.3) +
+               scale_x_log10() + theme(legend.position='top') +
+               ggtitle(sprintf('%s mean distance to %i-nn', file_prefix, i))
+
+        ggsave(paste(file_prefix, '_dens_', i, 'nn_mean.pdf', sep=''))
     }
 }
 
@@ -129,6 +139,7 @@ export_pca <- function(X, labels, col, pch, class_names, file_prefix,
 #'                 input data or an already computed TSNE output
 export_tsne <- function(X, labels, col, pch, class_names, file_prefix,
                         tsne_out=FALSE){
+    require(Rtsne)
     if(tsne_out == FALSE){
         X.tsne <- Rtsne(as.matrix(X))
     }
@@ -222,8 +233,8 @@ export_calibration <- function(score,target,number_bins){
 #' @param tsne_out A logical value indicating if the first parameter X is the
 #'                 input data or an already computed TSNE output
 export_heatmap <- function(X, height, width, blob_name){
-    library(pheatmap)
-    library(reshape2)
+    require(pheatmap)
+    require(reshape2)
     a=colSums(X)
     df=data.frame(a=a,ro=1:height,co=rep(1:width,each=height))
     #dfx=dcast(df,co+ro~.,fun.aggregate=mean,value.var="a")
@@ -244,11 +255,6 @@ if(blob.height > 1){
     print('Creating heatmap plots')
     export_heatmap(X, blob.height, blob.width, blob.name)
 }
-
-# Remove variables with constant zero value
-X <- X[, colSums(X) != 0]
-# Remove duplicated rows
-X <- X[duplicated(X),]
 
 # Plot class names, color and shape
 all.class_names <- c("airplane","automobile","bird","cat","deer",
@@ -280,31 +286,33 @@ mis.pch <- c(15, 16)
 mis.labels <- abs(all.predictions-all.labels)
 mis.labels <- ifelse(mis.labels==0, 0, mis.labels/mis.labels)+1
 
+sprintf('Accuracy on all the classes is = %f',
+        100-mean(all.predictions != all.labels)*100)
 sprintf('Accuracy on class %i %s = %f', id_positive, all.class_names[id_positive],
         100-mean(abs(bin.predictions-bin.labels))*100)
 
 print('Creating misclassified k-nearest neighbour distances')
-export_two_class_knn_distances(X, 6, mis.labels, mis.class_names, blob.name)
-print('Creating calibration plots')
-target <- bin.labels
-export_calibration(bin.prob,target,number_bins=10)
-print('Creating Principal Component Analysis (PCA) plots')
-X.pca <- export_pca(X, conf_mat.classes, conf_mat.col, conf_mat.pch,
-                    conf_mat.class_names, blob.name)
-print('Ploting PCA with all the classes')
-X.pca <- export_pca(X, all.labels, col=all.col, pch=all.pch, all.class_names,
-                    paste(blob.name, '_multiclass', sep=''), pca_out=TRUE)
-print('Ploting PCA with correct vs mis')
-X.pca <- export_pca(X, mis.labels, col=mis.col, pch=mis.pch, mis.class_names,
-                    paste(blob.name, '_mis', sep=''), pca_out=TRUE)
-print('Creating Stochastic Neighbour Embedding (T-SNE) plots')
-X.tsne <- export_tsne(X, conf_mat.classes, conf_mat.col, conf_mat.pch,
-                        conf_mat.class_names, blob.name)
-print('Ploting T-SNE with all the classes')
-X.tsne <- export_tsne(X, all.labels, col=all.col, pch=all.pch, all.class_names,
-                      paste(blob.name, '_multiclass', sep=''), tsne_out=TRUE)
-print('Ploting T-SNE with correct vs mis')
-X.tsne <- export_tsne(X, mis.labels, col=mis.col, pch=mis.pch, mis.class_names,
-                      paste(blob.name, '_mis', sep=''), tsne_out=TRUE)
-print('Creating Linear Discriminant Analysis (LDA) plots')
-export_lda(X, bin.predictions, conf_mat, blob.name)
+export_two_class_knn_distances(X, 10, mis.labels, mis.class_names, blob.name)
+# print('Creating calibration plots')
+# target <- bin.labels
+# export_calibration(bin.prob,target,number_bins=10)
+# print('Creating Principal Component Analysis (PCA) plots')
+# X.pca <- export_pca(X, conf_mat.classes, conf_mat.col, conf_mat.pch,
+#                     conf_mat.class_names, blob.name)
+# print('Ploting PCA with all the classes')
+# X.pca <- export_pca(X, all.labels, col=all.col, pch=all.pch, all.class_names,
+#                     paste(blob.name, '_multiclass', sep=''), pca_out=TRUE)
+# print('Ploting PCA with correct vs mis')
+# X.pca <- export_pca(X, mis.labels, col=mis.col, pch=mis.pch, mis.class_names,
+#                     paste(blob.name, '_mis', sep=''), pca_out=TRUE)
+# print('Creating Stochastic Neighbour Embedding (T-SNE) plots')
+# X.tsne <- export_tsne(X, conf_mat.classes, conf_mat.col, conf_mat.pch,
+#                         conf_mat.class_names, blob.name)
+# print('Ploting T-SNE with all the classes')
+# X.tsne <- export_tsne(X, all.labels, col=all.col, pch=all.pch, all.class_names,
+#                       paste(blob.name, '_multiclass', sep=''), tsne_out=TRUE)
+# print('Ploting T-SNE with correct vs mis')
+# X.tsne <- export_tsne(X, mis.labels, col=mis.col, pch=mis.pch, mis.class_names,
+#                       paste(blob.name, '_mis', sep=''), tsne_out=TRUE)
+# print('Creating Linear Discriminant Analysis (LDA) plots')
+# export_lda(X, bin.predictions, conf_mat, blob.name)
