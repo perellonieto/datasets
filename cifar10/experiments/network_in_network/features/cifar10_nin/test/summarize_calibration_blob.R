@@ -2,11 +2,15 @@
 require(MASS)
 
 blob.name <- 'pool3'
-train_instances <- 5000
+train_instances <- 5000 #Number of training instances
+valid_instances <- 1000 #Number of Validation instances
+train_idx <- 1:(train_instances-validation_instances)
+valid_idx <- (train_instances-validation_instances+1):train_instances
 skip <- 0
 CLASS_NAMES <- c("airplane","automobile","bird","cat","deer",
                  "dog","frog","horse","ship","truck")
-BINS <- c(2,4,8,16,32,64,128,256, 512, 1024, 248)
+width_bins <- c(2,4,8,16,32,64,128,256, 512, 768, 1024, 1536, 2048)
+size_bins <- c(15,20,30,50,60,61,62,63,64,65,67,68,69,70,80,90,100,110,120)
 
 brier_score <- function(score, target){
     return(sum((score-target)^2)/length(target))
@@ -144,31 +148,46 @@ export_cal_platt_scaling <- function(score,target,class_name){
     return(brier_score(glm_out$fitted, target))
 }
 
-export_cal_width_binning <- function(score,target,number_bins,
-                                            class_name){
-    # Width binning
-    breaks=c(0:number_bins)/number_bins
-    h_total <- hist(score, breaks=breaks, plot=FALSE)
-    h_pos <- hist(score[target==1], breaks=breaks, plot=FALSE)
-    proportions <- h_pos$counts/h_total$counts
-    pdf(sprintf('calibration_%i_%s_width_binning.pdf', number_bins, class_name))
-    plot(h_total$mids, proportions, xlim=c(0,1), ylim=c(0,1), col='red',
+export_cal_width_binning <- function(cal,class_name){
+    pdf(sprintf('calibration_%i_%s_width_binning.pdf', cal$n_bins, class_name))
+    plot(cal$mids, cal$score, xlim=c(0,1), ylim=c(0,1), col='red',
          xlab='score', ylab='fraction of positives',
          main=sprintf('%s Width binning curve (1/%i = %f)', class_name,
-                      number_bins, 1/number_bins))
-    lines(h_total$mids, h_pos$counts/h_total$counts, col='red')
+                      cal$n_bins, 1/cal$n_bins))
+    lines(cal$mids, cal$score, col='red')
     lines(c(0,1), c(0,1), lty=2, col='blue')
-    barplot(proportions, width=breaks[-1] - breaks[-length(breaks)], space=0,
-            add=T, col=rgb(0,0,0,0), border=rgb(0,0,0,0.3))
+    barplot(cal$score, width=cal$breaks[-1] - cal$breaks[-length(cal$breaks)],
+            space=0, add=T, col=rgb(0,0,0,0), border=rgb(0,0,0,0.3))
     garbage <- dev.off()
+}
 
-    new_scores <- proportions[findInterval(score,breaks, all.inside=TRUE)]
-    return(brier_score(new_scores,target))
+calibration_width_binning <- function(score,target,number_bins){
+    # Width binning
+    breaks <- c(0:number_bins)/number_bins
+    h_total <- hist(score, breaks=breaks, plot=FALSE)
+    h_pos <- hist(score[target==1], breaks=breaks, plot=FALSE)
+    score <- h_pos$counts/(h_total$counts+1)
+
+    return(list(breaks=breaks, mids=h_total$mids, score=score,
+                n_bins=number_bins))
 }
 
 
-export_cal_size_binning <- function(score,target,number_bins,
-                                            class_name){
+export_cal_size_binning <- function(cal,class_name){
+    pdf(sprintf('calibration_%i_%s_size_binning.pdf', cal$number_bins, class_name))
+    plot(cal$mids, cal$score, xlim=c(0,1), ylim=c(0,1), col='red',
+         xlab='score', ylab='fraction of positives',
+         main=sprintf('%s Size binning curve (%i/%i = %i)', class_name,
+                      length(cal$score), cal$number_bins,
+                      (ceiling(length(cal$score)/cal$number_bins))))
+    lines(cal$mids, cal$score, col='red')
+    lines(c(0,1), c(0,1), lty=2, col='blue')
+    barplot(cal$score, width=cal$breaks[-1] - cal$breaks[-length(cal$breaks)], space=0,
+            add=T, col=rgb(0,0,0,0), border=rgb(0,0,0,0.3))
+    garbage <- dev.off()
+}
+
+calibration_size_binning <- function(score,target,number_bins){
     # Size binning
     score_sorted <- sort(score, index.return=TRUE)
     index_breaks=ceiling(c(0:number_bins)*length(score)/number_bins)
@@ -181,20 +200,9 @@ export_cal_size_binning <- function(score,target,number_bins,
         h_total[i] <- index_breaks[i+1] - index_breaks[i]
         h_pos[i] <- sum(target[score_sorted$ix[c((index_breaks[i]+1):index_breaks[i+1])]])
     }
-    pdf(sprintf('calibration_%i_%s_size_binning.pdf', number_bins, class_name))
-    plot(bin_mean, h_pos/h_total, xlim=c(0,1), ylim=c(0,1), col='red',
-         xlab='score', ylab='fraction of positives',
-         main=sprintf('%s Size binning curve (%i/%i = %i)', class_name,
-                      length(score), number_bins, index_breaks[2]))
-    lines(bin_mean, h_pos/h_total, col='red')
-    lines(c(0,1), c(0,1), lty=2, col='blue')
-    barplot(h_pos/h_total, width=breaks[-1] - breaks[-length(breaks)], space=0,
-            add=T, col=rgb(0,0,0,0), border=rgb(0,0,0,0.3))
-    garbage <- dev.off()
 
-    intervals <- findInterval(score,breaks, all.inside=TRUE)
-    new_scores <- bin_mean[intervals]
-    return(brier_score(new_scores, target))
+    return(list(breaks=breaks, mids=bin_mean, score=h_pos/(h_total+1),
+                n_bins=number_bins))
 }
 
 export_cal_hist_pos_scores <- function(score,target,number_bins,
@@ -235,10 +243,14 @@ X <- read.csv(paste(blob.name, '.csv', sep=''), sep=',', header=FALSE,
 all.labels <- all.labels[1:train_instances,]
 all.prob <- all.prob[1:train_instances,]
 X <- X[1:train_instances,]
+num_samples <- length(all.labels)
 
-col_names <- c('original', 'platt', paste('width', 1/BINS),
-               paste('size', ceiling(length(all.labels)/BINS)))
-error_bs <- matrix(nrow=length(CLASS_NAMES), ncol=length(col_names))
+width_names <- paste('width', 1/width_bins)
+size_names <- paste('size', ceiling(num_samples/size_bins))
+col_names <- c('original', 'platt', width_names,size_names)
+
+train_error_bs <- matrix(nrow=length(CLASS_NAMES), ncol=length(col_names))
+valid_error_bs <- matrix(nrow=length(CLASS_NAMES), ncol=length(col_names))
 for(i in seq_along(CLASS_NAMES)){
     print(sprintf('Creating plots for class[%i] = %s', i, CLASS_NAMES[i]))
     # The index consideres the first class = 1 = airplane (R format)
@@ -298,30 +310,71 @@ for(i in seq_along(CLASS_NAMES)){
     print('Creating calibration plots')
     target <- bin.labels
 
-    error_bs[id_positive,1] <- brier_score(bin.prob, target)
+    train_error_bs[id_positive,1] <- brier_score(bin.prob, target)
     print(sprintf("Brier score for class %s = %f", CLASS_NAMES[id_positive],
-                  error_bs[id_positive]))
+                  train_error_bs[id_positive]))
     score <- bin.prob
     class_name <- CLASS_NAMES[id_positive]
-    error_bs[id_positive,2] <- export_cal_platt_scaling(score,target,class_name)
+    train_error_bs[id_positive,2] <- export_cal_platt_scaling(score,target,class_name)
     export_cal_sorted_scores(score,target,class_name)
-    for(j in seq_along(BINS)){
-        number_bins <- BINS[j]
-        error_bs[id_positive, 2+j] <- export_cal_width_binning(
-                                          score,target,number_bins,class_name)
+    for(j in seq_along(width_bins)){
+        number_bins <- width_bins[j]
+        cal <- calibration_width_binning(score[train_idx],target[train_idx],number_bins)
+        export_cal_width_binning(cal,class_name)
+        prediction <- cal$score[findInterval(score[train_idx],cal$breaks, all.inside=TRUE)]
+        train_error_bs[id_positive, 2+j] <-
+            brier_score(prediction,target[train_idx])
+        prediction <- cal$score[findInterval(score[valid_idx],cal$breaks, all.inside=TRUE)]
+        valid_error_bs[id_positive, 2+j] <-
+            brier_score(prediction,target[valid_idx])
 
-        error_bs[id_positive, 2+length(BINS)+j] <-
-                 export_cal_size_binning(score,target,number_bins,class_name)
-
-        export_cal_hist_pos_scores(score,target,number_bins,class_name)
-   }
+        export_cal_hist_pos_scores(score[train_idx],target[train_idx],
+                                   number_bins,class_name)
+    }
+    current_position <- 2 + length(width_bins)
+    for(j in seq_along(size_bins)){
+        number_bins <- size_bins[j]
+        cal <- calibration_size_binning(score,target,number_bins)
+        export_cal_size_binning(cal,class_name)
+        prediction <- cal$score[findInterval(score,cal$breaks, all.inside=TRUE)]
+        train_error_bs[id_positive, 2+length(width_bins)+j] <-
+                 brier_score(prediction,target)
+    }
 }
 require(pheatmap)
-pdf('calibration_brier_scores.pdf')
-pheatmap(error_bs, cluster_cols=F, cluster_rows=F, display_numbers=T,
+pdf('calibration_heatmap_scores.pdf')
+pheatmap(train_error_bs, cluster_cols=F, cluster_rows=F, display_numbers=T,
          number_format="%.2e", labels_row=CLASS_NAMES, labels_col=col_names)
 dev.off()
 pdf('calibration_barplot_scores.pdf')
-barplot(error_bs, names.arg=col_names, angle=45, legend.text=CLASS_NAMES,
+barplot(train_error_bs, names.arg=col_names, angle=45, legend.text=CLASS_NAMES,
         las=2, args.legend=c(ncol=2, cex=0.9))
 dev.off()
+
+pdf('calibration_width_brier_scores.pdf')
+plot(1/width_bins, colMeans(train_error_bs[,3:(length(width_bins)+2)]), type='b', xlab='width',
+     ylab='brier score', main='Average error per class Width binninb', log='x', col='purple',
+     ylim=c(0.01,0.025))
+lines(1/width_bins, colMeans(valid_error_bs[,3:(length(width_bins)+2)]),
+      type='o', log='x')
+lines(c(1/width_bins[1], 1/width_bins[length(width_bins)]), rep(mean(train_error_bs[,1]),2), type='l',
+      col='blue', lty=2)
+lines(c(1/width_bins[1], 1/width_bins[length(width_bins)]), rep(mean(train_error_bs[,2]),2), type='l',
+      col='red', lty=2)
+legend('bottomright', c('Original', 'Platt', 'Training', 'Validation'),
+       col=c('blue', 'red', 'purple', 'black'), lty=c(2, 2, 1, 1))
+dev.off()
+
+pdf('calibration_size_brier_scores.pdf')
+sizes <- ceiling(num_samples/size_bins)
+plot(sizes,
+     colMeans(train_error_bs[,(3+length(width_bins)):(length(width_bins)+length(sizes)+2)]), type='o',
+     xlab='size', ylab='brier score', main='Average error per class', log='x')
+lines(c(sizes[1], sizes[length(sizes)]), rep(mean(train_error_bs[,1]),2), type='l',
+      col='blue', lty=2)
+lines(c(sizes[1], sizes[length(sizes)]), rep(mean(train_error_bs[,2]),2), type='l',
+      col='red', lty=2)
+legend('topleft', c('Original', 'Platt', 'Size binning'),
+       col=c('blue', 'red', 'black'), lty=c(2, 2, 1))
+dev.off()
+
