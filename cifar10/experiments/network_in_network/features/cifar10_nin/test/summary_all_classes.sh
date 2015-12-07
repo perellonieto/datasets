@@ -28,3 +28,14 @@ for i in "${!OUTPUT_FILES[@]}"; do
     gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite \
         -sOutputFile=${OUTPUT_FILES[$i]} ${FILES[@]}
 done
+
+
+METHOD=('size' 'width')
+for i in "${!CLASS_NAMES[@]}"; do
+    for j in "${!METHOD[@]}"; do
+        INPUT_FILES=`ls -v calibration*${CLASS_NAMES[$i]}*${METHOD[$j]}*.pdf`
+        gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite \
+          -sOutputFile="all_calibration_${CLASS_NAMES[$i]}_${METHOD[$j]}.pdf" \
+          ${INPUT_FILES[@]}
+    done
+done
