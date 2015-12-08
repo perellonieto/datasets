@@ -1,16 +1,18 @@
 #!/usr/bin/Rscript
 require(MASS)
+require(bisoreg) # fits.isoreg
 
 blob.name <- 'pool3'
-train_instances <- 5000 #Number of training instances
-valid_instances <- 1000 #Number of Validation instances
-train_idx <- 1:(train_instances-validation_instances)
-valid_idx <- (train_instances-validation_instances+1):train_instances
+CROSS_VAL <- TRUE
+train_instances <- 5000 #Number of training instances (including validation)
+valid_instances <- 500 #Number of Validation instances
 skip <- 0
 CLASS_NAMES <- c("airplane","automobile","bird","cat","deer",
                  "dog","frog","horse","ship","truck")
-width_bins <- c(2,4,8,16,32,64,128,256, 512, 768, 1024, 1536, 2048)
-size_bins <- c(15,20,30,50,60,61,62,63,64,65,67,68,69,70,80,90,100,110,120)
+width_bins<-c(2,3,4,5,6,7,8,9,10,11,16,32,40,50,64,128,256,512,768,1024,1536,
+              2048)
+size_bins <- c(15,20,30,50,60,61,62,63,64,65,67,68,69,70,80,90,100,110,120,
+               150,160,180,200,230,250,280,310)
 
 brier_score <- function(score, target){
     return(sum((score-target)^2)/length(target))
@@ -60,7 +62,7 @@ export_lda <- function(X, Y, conf_mat, blob_name){
 }
 
 platt_toy_example <- function(){
-    prob_splits = 500
+    prob_splits = 100
     breaks=seq(0,1,length.out=prob_splits)
     score = rep(breaks, prob_splits)
     y = as.vector(lower.tri(matrix(ncol=prob_splits,
@@ -133,6 +135,17 @@ export_cal_sorted_scores <- function(score, target, class_name){
     garbage <- dev.off()
 }
 
+export_cal_isoreg <- function(score,target,class_name){
+    # Isotonic regression
+    isoreg_out <- isoreg(score, target)
+    pdf(sprintf('calibration_%s_isoreg.pdf', class_name))
+    plot(isoreg_out, main=sprintf('%s Isotonic regression',
+                                               class_name))
+    garbage <- dev.off()
+
+    return(isoreg_out)
+}
+
 export_cal_platt_scaling <- function(score,target,class_name){
     # Platts scaling
     df <- data.frame(y=target, score=score)
@@ -145,7 +158,7 @@ export_cal_platt_scaling <- function(score,target,class_name){
     lines(seq(0,1,0.05), predictions, col='red')
     garbage <- dev.off()
 
-    return(brier_score(glm_out$fitted, target))
+    return(glm_out)
 }
 
 export_cal_width_binning <- function(cal,class_name){
@@ -247,134 +260,227 @@ num_samples <- length(all.labels)
 
 width_names <- paste('width', 1/width_bins)
 size_names <- paste('size', ceiling(num_samples/size_bins))
-col_names <- c('original', 'platt', width_names,size_names)
+col_names <- c('original', 'platt', 'isoreg', width_names,size_names)
 
-train_error_bs <- matrix(nrow=length(CLASS_NAMES), ncol=length(col_names))
-valid_error_bs <- matrix(nrow=length(CLASS_NAMES), ncol=length(col_names))
-for(i in seq_along(CLASS_NAMES)){
-    print(sprintf('Creating plots for class[%i] = %s', i, CLASS_NAMES[i]))
-    # The index consideres the first class = 1 = airplane (R format)
-    # Consequently, all the csv label files need to be increased by one
-    id_positive <- i
-
-    # Creating binary labels one agains the rest
-    bin.labels <- all.labels
-    bin.labels[bin.labels == id_positive] <- -1
-    bin.labels[bin.labels != -1] <- 0
-    bin.labels <- bin.labels*-1
-
-
-    all.predictions <- apply(all.prob, MARGIN=1, which.max)
-    bin.predictions <- all.predictions
-    bin.predictions[bin.predictions == id_positive] <- -1
-    bin.predictions[bin.predictions != -1] <- 0
-    bin.predictions <- bin.predictions*-1
-
-    bin.prob <- all.prob[,id_positive]
-
-
-    # Plot class names, color and shape
-    all.class_names <- CLASS_NAMES
-    all.col <- rainbow(length(all.class_names))
-    all.pch <- rep(c(15,16,17,18), length(all.class_names))
-
-    # Plot class names, color and shape
-    conf_mat.class_names <- c(paste('true', all.class_names[id_positive]),
-                              'true negative',
-                              paste('false', all.class_names[id_positive]),
-                              'false negative')
-    conf_mat.col <- c('red', 'blue', 'darkcyan', 'darkorange')
-    conf_mat.pch <- c(15, 16, 17, 18)
-    print('computing confusion matrix')
-    conf_mat.true_positives <- bin.labels==1 & bin.predictions==1
-    conf_mat.true_negatives <- bin.labels==0 & bin.predictions==0
-    conf_mat.false_positives <- bin.labels==0 & bin.predictions==1
-    conf_mat.false_negatives <- bin.labels==1 & bin.predictions==0
-    conf_mat.classes <- (bin.labels-2)*-1
-    conf_mat.classes[conf_mat.false_positives] <- 3
-    conf_mat.classes[conf_mat.false_negatives] <- 4
-    conf_mat.names <- conf_mat.class_names[conf_mat.classes]
-
-    # Plot class names, color and shape
-    mis.class_names <- c('correct', 'mis')
-    mis.col <- c('red', 'blue')
-    mis.pch <- c(15, 16)
-    mis.labels <- abs(all.predictions-all.labels)
-    mis.labels <- ifelse(mis.labels==0, 0, mis.labels/mis.labels)+1
-
-    sprintf('Accuracy on all the classes is = %f',
-            100-mean(all.predictions != all.labels)*100)
-    sprintf('Accuracy on class %i %s = %f', id_positive, all.class_names[id_positive],
-            100-mean(abs(bin.predictions-bin.labels))*100)
-
-    print('Creating calibration plots')
-    target <- bin.labels
-
-    train_error_bs[id_positive,1] <- brier_score(bin.prob, target)
-    print(sprintf("Brier score for class %s = %f", CLASS_NAMES[id_positive],
-                  train_error_bs[id_positive]))
-    score <- bin.prob
-    class_name <- CLASS_NAMES[id_positive]
-    train_error_bs[id_positive,2] <- export_cal_platt_scaling(score,target,class_name)
-    export_cal_sorted_scores(score,target,class_name)
-    for(j in seq_along(width_bins)){
-        number_bins <- width_bins[j]
-        cal <- calibration_width_binning(score[train_idx],target[train_idx],number_bins)
-        export_cal_width_binning(cal,class_name)
-        prediction <- cal$score[findInterval(score[train_idx],cal$breaks, all.inside=TRUE)]
-        train_error_bs[id_positive, 2+j] <-
-            brier_score(prediction,target[train_idx])
-        prediction <- cal$score[findInterval(score[valid_idx],cal$breaks, all.inside=TRUE)]
-        valid_error_bs[id_positive, 2+j] <-
-            brier_score(prediction,target[valid_idx])
-
-        export_cal_hist_pos_scores(score[train_idx],target[train_idx],
-                                   number_bins,class_name)
+if(CROSS_VAL){
+    n_folds <- floor(train_instances/valid_instances)
+    all_ids <- 1:train_instances
+    folds_val <- matrix(all_ids, nrow=n_folds,byrow=TRUE)
+    folds_tra <- matrix(,nrow=n_folds,ncol=train_instances-valid_instances)
+    for(i in 1:n_folds){
+        folds_tra[i,] <- all_ids[-(folds_val[i,])]
     }
-    current_position <- 2 + length(width_bins)
-    for(j in seq_along(size_bins)){
-        number_bins <- size_bins[j]
-        cal <- calibration_size_binning(score,target,number_bins)
-        export_cal_size_binning(cal,class_name)
-        prediction <- cal$score[findInterval(score,cal$breaks, all.inside=TRUE)]
-        train_error_bs[id_positive, 2+length(width_bins)+j] <-
-                 brier_score(prediction,target)
+    folds <- list(train=folds_tra, valid=folds_val)
+} else{
+    print('Not implemented without cross-validation')
+    quit()
+}
+
+train_error_bs <- array(,c(length(CLASS_NAMES), length(col_names),n_folds))
+valid_error_bs <- array(,c(length(CLASS_NAMES), length(col_names),n_folds))
+for(fold_id in 1:n_folds){
+    # Traininga and Validation partitions
+    train_idx <- folds$train[fold_id,]
+    valid_idx <- folds$valid[fold_id,]
+    for(i in seq_along(CLASS_NAMES)){
+        print(sprintf('Creating plots for class[%i] = %s', i, CLASS_NAMES[i]))
+        # The index consideres the first class = 1 = airplane (R format)
+        # Consequently, all the csv label files need to be increased by one
+        id_pos <- i
+
+        # Creating binary labels one agains the rest
+        bin.labels <- all.labels
+        bin.labels[bin.labels == id_pos] <- -1
+        bin.labels[bin.labels != -1] <- 0
+        bin.labels <- bin.labels*-1
+
+
+        all.predictions <- apply(all.prob, MARGIN=1, which.max)
+        bin.predictions <- all.predictions
+        bin.predictions[bin.predictions == id_pos] <- -1
+        bin.predictions[bin.predictions != -1] <- 0
+        bin.predictions <- bin.predictions*-1
+
+        bin.prob <- all.prob[,id_pos]
+
+
+        # Plot class names, color and shape
+        all.class_names <- CLASS_NAMES
+        all.col <- rainbow(length(all.class_names))
+        all.pch <- rep(c(15,16,17,18), length(all.class_names))
+
+        # Plot class names, color and shape
+        conf_mat.class_names <- c(paste('true', all.class_names[id_pos]),
+                                  'true negative',
+                                  paste('false', all.class_names[id_pos]),
+                                  'false negative')
+        conf_mat.col <- c('red', 'blue', 'darkcyan', 'darkorange')
+        conf_mat.pch <- c(15, 16, 17, 18)
+        print('computing confusion matrix')
+        conf_mat.true_positives <- bin.labels==1 & bin.predictions==1
+        conf_mat.true_negatives <- bin.labels==0 & bin.predictions==0
+        conf_mat.false_positives <- bin.labels==0 & bin.predictions==1
+        conf_mat.false_negatives <- bin.labels==1 & bin.predictions==0
+        conf_mat.classes <- (bin.labels-2)*-1
+        conf_mat.classes[conf_mat.false_positives] <- 3
+        conf_mat.classes[conf_mat.false_negatives] <- 4
+        conf_mat.names <- conf_mat.class_names[conf_mat.classes]
+
+        # Plot class names, color and shape
+        mis.class_names <- c('correct', 'mis')
+        mis.col <- c('red', 'blue')
+        mis.pch <- c(15, 16)
+        mis.labels <- abs(all.predictions-all.labels)
+        mis.labels <- ifelse(mis.labels==0, 0, mis.labels/mis.labels)+1
+
+        sprintf('Accuracy on all the classes is = %f',
+                100-mean(all.predictions != all.labels)*100)
+        sprintf('Accuracy on class %i %s = %f', id_pos, all.class_names[id_pos],
+                100-mean(abs(bin.predictions-bin.labels))*100)
+
+        print('Creating calibration plots')
+        target <- bin.labels
+
+        train_error_bs[id_pos,1,fold_id] <- brier_score(bin.prob[train_idx], target[train_idx])
+        valid_error_bs[id_pos,1,fold_id] <- brier_score(bin.prob[valid_idx], target[valid_idx])
+        print(sprintf("Brier score for class %s = %f", CLASS_NAMES[id_pos],
+                      train_error_bs[id_pos]))
+        score <- bin.prob
+        class_name <- CLASS_NAMES[id_pos]
+
+        export_cal_sorted_scores(score,target,class_name)
+
+        # PLATT SCALING
+        glm_out <- export_cal_platt_scaling(score[train_idx],target[train_idx],class_name)
+        predictions <- predict(glm_out, newdata=data.frame(
+                                        score=score[train_idx]),
+                                        type='response')
+        train_error_bs[id_pos,2,fold_id] <- brier_score(predictions,
+                                                        target[train_idx])
+        predictions <- predict(glm_out, newdata=data.frame(
+                                        score=score[valid_idx]),
+                                        type='response')
+        valid_error_bs[id_pos,2,fold_id] <- brier_score(predictions,
+                                                        target[valid_idx])
+
+        # ISOTONIC REGRESSION
+        idx <- duplicated(score[train_idx])
+        score_train_unique <- (score[train_idx])[!idx]
+        target_train_unique <- (target[train_idx])[!idx]
+        isoreg_out <- export_cal_isoreg(score_train_unique,target_train_unique,
+                                        class_name)
+        predictions <- fits.isoreg(isoreg_out, score[train_idx])
+        train_error_bs[id_pos,3,fold_id] <- brier_score(predictions,
+                                                        target[train_idx])
+
+        predictions <- fits.isoreg(isoreg_out, score[valid_idx])
+        valid_error_bs[id_pos,3,fold_id] <- brier_score(predictions,
+                                                        target[valid_idx])
+
+        # WIDTH BINNING
+        for(j in seq_along(width_bins)){
+            number_bins <- width_bins[j]
+            cal <- calibration_width_binning(score[train_idx],target[train_idx],
+                                             number_bins)
+            export_cal_width_binning(cal,class_name)
+            prediction <- cal$score[findInterval(score[train_idx],cal$breaks,
+                                                 all.inside=TRUE)]
+            train_error_bs[id_pos,3+j,fold_id] <-
+                brier_score(prediction,target[train_idx])
+            prediction <- cal$score[findInterval(score[valid_idx],cal$breaks,
+                                                 all.inside=TRUE)]
+            valid_error_bs[id_pos,3+j,fold_id] <-
+                brier_score(prediction,target[valid_idx])
+
+            export_cal_hist_pos_scores(score[train_idx],target[train_idx],
+                                       number_bins,class_name)
+        }
+        current_position <- 3 + length(width_bins)
+        # SIZE BINNING
+        for(j in seq_along(size_bins)){
+            number_bins <- size_bins[j]
+            cal <- calibration_size_binning(score[train_idx],target[train_idx],
+                                            number_bins)
+            export_cal_size_binning(cal,class_name)
+            prediction <- cal$score[findInterval(score[train_idx],cal$breaks,
+                                                 all.inside=TRUE)]
+            train_error_bs[id_pos, 3+length(width_bins)+j,fold_id] <-
+                brier_score(prediction,target[train_idx])
+            prediction <- cal$score[findInterval(score[valid_idx],cal$breaks,
+                                                 all.inside=TRUE)]
+            valid_error_bs[id_pos, 3+length(width_bins)+j,fold_id] <-
+                brier_score(prediction,target[valid_idx])
+        }
     }
 }
+
+mean_train_error_bs <- apply(train_error_bs, c(1,2), mean)
+mean_valid_error_bs <- apply(valid_error_bs, c(1,2), mean)
+
 require(pheatmap)
 pdf('calibration_heatmap_scores.pdf')
-pheatmap(train_error_bs, cluster_cols=F, cluster_rows=F, display_numbers=T,
+pheatmap(mean_train_error_bs, cluster_cols=F, cluster_rows=F, display_numbers=T,
          number_format="%.2e", labels_row=CLASS_NAMES, labels_col=col_names)
 dev.off()
 pdf('calibration_barplot_scores.pdf')
-barplot(train_error_bs, names.arg=col_names, angle=45, legend.text=CLASS_NAMES,
+barplot(mean_train_error_bs, names.arg=col_names, angle=45, legend.text=CLASS_NAMES,
         las=2, args.legend=c(ncol=2, cex=0.9))
 dev.off()
 
 pdf('calibration_width_brier_scores.pdf')
-plot(1/width_bins, colMeans(train_error_bs[,3:(length(width_bins)+2)]), type='b', xlab='width',
-     ylab='brier score', main='Average error per class Width binninb', log='x', col='purple',
-     ylim=c(0.01,0.025))
-lines(1/width_bins, colMeans(valid_error_bs[,3:(length(width_bins)+2)]),
-      type='o', log='x')
-lines(c(1/width_bins[1], 1/width_bins[length(width_bins)]), rep(mean(train_error_bs[,1]),2), type='l',
-      col='blue', lty=2)
-lines(c(1/width_bins[1], 1/width_bins[length(width_bins)]), rep(mean(train_error_bs[,2]),2), type='l',
-      col='red', lty=2)
-legend('bottomright', c('Original', 'Platt', 'Training', 'Validation'),
-       col=c('blue', 'red', 'purple', 'black'), lty=c(2, 2, 1, 1))
+l_wb <- length(width_bins)
+plot(1/width_bins, colMeans(mean_train_error_bs[,4:(l_wb+3)]), type='b',
+     col='purple', log='x', ylim=c(0.01,0.025),
+     xlab='width', ylab='brier score',
+     main='Average error per class Width binning')
+lines(1/width_bins, colMeans(mean_valid_error_bs[,4:(l_wb+3)]), type='o')
+lines(c(1/width_bins[1], 1/width_bins[l_wb]), rep(mean(mean_train_error_bs[,1]),2),
+      type='l', col='blue', lty=2)
+lines(c(1/width_bins[1], 1/width_bins[l_wb]), rep(mean(mean_valid_error_bs[,1]),2),
+      type='l', col='blue', lty=1)
+lines(c(1/width_bins[1], 1/width_bins[l_wb]), rep(mean(mean_train_error_bs[,2]),2),
+      type='l', col='red', lty=2)
+lines(c(1/width_bins[1], 1/width_bins[l_wb]), rep(mean(mean_valid_error_bs[,2]),2),
+      type='l', col='red', lty=1)
+lines(c(1/width_bins[1], 1/width_bins[l_wb]), rep(mean(mean_train_error_bs[,3]),2),
+      type='l', col='orange', lty=2)
+lines(c(1/width_bins[1], 1/width_bins[l_wb]), rep(mean(mean_valid_error_bs[,3]),2),
+      type='l', col='orange', lty=1)
+legend('bottomright', c('Original Tra.', 'Original Val.',
+                        'Platt Tra.', 'Platt Val.',
+                        'Iso. Reg. Tra.', 'Iso. Reg. Val.',
+                        'Training', 'Validation'),
+       col=c('blue', 'blue', 'red', 'red',
+             'orange', 'orange', 'purple', 'black'),
+       lty=c(2,1,2,1,2,1,2,1))
 dev.off()
 
 pdf('calibration_size_brier_scores.pdf')
 sizes <- ceiling(num_samples/size_bins)
-plot(sizes,
-     colMeans(train_error_bs[,(3+length(width_bins)):(length(width_bins)+length(sizes)+2)]), type='o',
-     xlab='size', ylab='brier score', main='Average error per class', log='x')
-lines(c(sizes[1], sizes[length(sizes)]), rep(mean(train_error_bs[,1]),2), type='l',
-      col='blue', lty=2)
-lines(c(sizes[1], sizes[length(sizes)]), rep(mean(train_error_bs[,2]),2), type='l',
-      col='red', lty=2)
-legend('topleft', c('Original', 'Platt', 'Size binning'),
-       col=c('blue', 'red', 'black'), lty=c(2, 2, 1))
+l_s <- length(sizes)
+plot(sizes,colMeans(mean_train_error_bs[,(4+l_wb):(l_wb+l_s+3)]),
+     type='b', log='x', col='purple', ylim=c(0.014,0.022),
+     xlab='size', ylab='brier score',
+     main='Average error per class Size binning')
+lines(sizes, colMeans(mean_valid_error_bs[,(4+l_wb):(l_wb+l_s+3)]),
+      type='o')
+lines(c(sizes[1], sizes[l_s]), rep(mean(mean_train_error_bs[,1]),2),
+      type='l', col='blue', lty=2)
+lines(c(sizes[1], sizes[l_s]), rep(mean(mean_valid_error_bs[,1]),2),
+      type='l', col='blue', lty=1)
+lines(c(sizes[1], sizes[l_s]), rep(mean(mean_train_error_bs[,2]),2),
+      type='l', col='red', lty=2)
+lines(c(sizes[1], sizes[l_s]), rep(mean(mean_valid_error_bs[,2]),2),
+      type='l', col='red', lty=1)
+lines(c(sizes[1], sizes[l_s]), rep(mean(mean_train_error_bs[,3]),2),
+      type='l', col='orange', lty=2)
+lines(c(sizes[1], sizes[l_s]), rep(mean(mean_valid_error_bs[,3]),2),
+      type='l', col='orange', lty=1)
+legend('topleft', c('Original Tra.', 'Original Val.',
+                    'Platt Tra.', 'Platt Val.',
+                    'Iso. Reg. Tra.', 'Iso. Reg Val.', 'Training',
+                    'Validation'),
+       col=c('blue', 'blue', 'red', 'red',
+             'orange', 'orange', 'purple', 'black'),
+       lty=c(2,1,2,1,2,1,2,1))
 dev.off()
-
