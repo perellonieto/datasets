@@ -77,7 +77,7 @@ export_two_class_knn_distances <- function(X, k, labels, class_names,
                environment=environment()) +
                geom_histogram(position='dodge') +
                scale_x_log10() + theme(legend.position='top') +
-               ggtitle(sprintf('%s mean distance to %i-nn', file_prefix, i))
+               ggtitle(sprintf('layer[%s] mean distance to %i-nn', file_prefix, i))
 
         ggsave(paste(file_prefix, '_hist_', i, 'nn_mean.pdf', sep=''))
 
@@ -85,9 +85,29 @@ export_two_class_knn_distances <- function(X, k, labels, class_names,
                environment=environment()) +
                geom_density(alpha=0.3) +
                scale_x_log10() + theme(legend.position='top') +
-               ggtitle(sprintf('%s mean distance to %i-nn', file_prefix, i))
+               ggtitle(sprintf('layer[%s] mean distance to %i-nn', file_prefix, i))
 
         ggsave(paste(file_prefix, '_dens_', i, 'nn_mean.pdf', sep=''))
+    }
+}
+
+#' Export to a PDF the result of running k-nn sum of distances from 2:k
+#'
+#' @param X A matrix of NxM where N is the number of samples and M the number
+#'          of features
+#' @param labels A vector of size N with numbers from [1,2] indicating the
+#'               class of each sample
+#' @param class_names A vector of size 2 with the name of each class
+#' @param file_prefix A string to add as a prefix to the generated PDF file
+export_knn_connections <- function(X, k, file_prefix) {
+    require(FNN)
+    require(ggplot2)
+    nn <- knn.index(X, k=k)
+    for(i in c(2:k)){
+        occurences <- table(table(nn[,2:i]))
+        pdf(sprintf('%s_knn_%i_connections.pdf', file_prefix, i))
+        barplot(occurences)
+        garbage <- dev.off()
     }
 }
 
@@ -106,18 +126,21 @@ export_pca <- function(X, labels, col, pch, class_names, file_prefix,
     if(pca_out==FALSE){
         X.pca <- prcomp(X, center=TRUE, scale.=TRUE)
         pdf(paste(file_prefix, '_pca.pdf', sep=''))
-        plot(X.pca, type='l', main="PCA[1:10]")
+        plot(X.pca, type='l',
+             main=sprintf("layer[%s] PCA eigenvalues", file_prefix))
         garbage <- dev.off()
 
         pdf(paste(file_prefix, '_pca_std.pdf', sep=''))
-        plot(X.pca$sdev, type='l', main="PCA",
-             xlab="Component", ylab="standard deviation")
+        plot(X.pca$sdev, type='l',
+             xlab="Component", ylab="standard deviation",
+             main=sprintf("layer[%s] PCA eigenvalues", file_prefix))
         garbage <- dev.off()
     }
     pc12 <- as.matrix(X) %*% as.matrix(X.pca$rotation[,1:2])
 
     pdf(paste(file_prefix, '_pc1_pc2.pdf', sep=''))
-    plot(pc12, col=col[labels], pch=pch[labels], main='PCA [1:2]', cex=0.5)
+    plot(pc12, col=col[labels], pch=pch[labels], cex=0.5,
+             main=sprintf("layer[%s] PCA projection", file_prefix))
     legend('topright', class_names, col=col, pch=pch)
     garbage <- dev.off()
     return(X.pca)
@@ -145,8 +168,8 @@ export_tsne <- function(X, labels, col, pch, class_names, file_prefix,
     }
     pdf(paste(file_prefix, '_tsne.pdf', sep=''))
     plot(X.tsne$Y, col=col[labels],
-         pch=pch[labels], main='TSNE [1:2]',
-         cex=0.5)
+         pch=pch[labels], cex=0.5,
+         main=sprintf("layer[%s] T-SNE", file_prefix))
     legend('topright', class_names, col=col, pch=pch)
     garbage <- dev.off()
     return(X.tsne)
@@ -155,12 +178,14 @@ export_tsne <- function(X, labels, col, pch, class_names, file_prefix,
 export_lda <- function(X, Y, conf_mat, blob_name){
     lda_out <- lda(as.matrix(X), as.matrix(Y))
     pdf(paste(blob_name, '_lda.pdf', sep=''))
-    plot(lda_out)
+    plot(lda_out,
+         main=sprintf("layer[%s] LDA", file_prefix))
     garbage <- dev.off()
 
     plda <- predict(object=lda_out, newdata = X)
     pdf(paste(blob_name, '_plda.pdf', sep=''))
-    plot(plda)
+    plot(plda,
+         main=sprintf("layer[%s] LDA projection", file_prefix))
     garbage <- dev.off()
 }
 
@@ -246,7 +271,8 @@ export_heatmap <- function(X, height, width, blob_name){
     #  ((n * K + k) * H + h) * W + w
     dfy=dcast(df,ro~co,fun.aggregate=mean,value.var="a")
     pdf(paste(blob_name, '_heatmap.pdf', sep=''))
-    pheatmap(as.matrix(dfy[,2:(width+1)]), cluster_cols=F,cluster_rows=F)
+    pheatmap(as.matrix(dfy[,2:(width+1)]), cluster_cols=F,cluster_rows=F,
+         main=sprintf("layer[%s] heat map", blob_name))
     garbage <- dev.off()
 }
 
@@ -291,11 +317,19 @@ sprintf('Accuracy on all the classes is = %f',
 sprintf('Accuracy on class %i %s = %f', id_positive, all.class_names[id_positive],
         100-mean(abs(bin.predictions-bin.labels))*100)
 
-print('Creating misclassified k-nearest neighbour distances')
-export_two_class_knn_distances(X, 10, mis.labels, mis.class_names, blob.name)
+print('Creating k-nearest neighbour occurrences')
+export_knn_connections(X, 10, blob.name)
+# print('Creating misclassified k-nearest neighbour distances')
+# export_two_class_knn_distances(X, 100, mis.labels, mis.class_names, blob.name)
 # print('Creating calibration plots')
 # target <- bin.labels
 # export_calibration(bin.prob,target,number_bins=10)
+#
+# # Remove variables with constant zero value
+# print('Removing features with constant value zero for PCA')
+# X <- X[, colSums(X) != 0]
+# sprintf('New dimensions of X = %s', paste(dim(X), collapse="x"))
+#
 # print('Creating Principal Component Analysis (PCA) plots')
 # X.pca <- export_pca(X, conf_mat.classes, conf_mat.col, conf_mat.pch,
 #                     conf_mat.class_names, blob.name)
@@ -305,6 +339,17 @@ export_two_class_knn_distances(X, 10, mis.labels, mis.class_names, blob.name)
 # print('Ploting PCA with correct vs mis')
 # X.pca <- export_pca(X, mis.labels, col=mis.col, pch=mis.pch, mis.class_names,
 #                     paste(blob.name, '_mis', sep=''), pca_out=TRUE)
+#
+# # Remove duplicated rows
+# print('Removing duplicated instances for TSNE')
+# dup <- duplicated(X)
+# X <- X[!dup,]
+# mis.labels <- mis.labels[!dup,]
+# all.labels <- all.labels[!dup,]
+# conf_mat.classes <- conf_mat.classes[!dup]
+# conf_mat.names <- conf_mat.names[!dup]
+# sprintf('New dimensions of X = %s', paste(dim(X), collapse="x"))
+#
 # print('Creating Stochastic Neighbour Embedding (T-SNE) plots')
 # X.tsne <- export_tsne(X, conf_mat.classes, conf_mat.col, conf_mat.pch,
 #                         conf_mat.class_names, blob.name)
