@@ -214,23 +214,21 @@ if(CROSS_VAL){
 
 # Results of all methods except Binning
 # FIXME: I need to create one empty row... with nrow=0 it does not work
-tra_err_oth_df <- data.frame(matrix(NA, nrow=1, ncol=4))
-val_err_oth_df <- data.frame(matrix(NA, nrow=1, ncol=4))
-# Change Variable Names
-names(tra_err_oth_df) <- c("class","method", "fold", "error")
-names(val_err_oth_df) <- c("class","method", "fold", "error")
+# If I set the names beforehand, I need to create this empty matrix with
+# one row and the desired number of columns
+# tra_err_oth_df <- data.frame(matrix(NA, nrow=1, ncol=4))
+# names(tra_err_oth_df) <- c("class","method", "fold", "error")
+# Otherwise, I can set the names at the end of the script
+tra_err_oth_df <- data.frame()
+val_err_oth_df <- data.frame()
 
 # Results of Size Binning
-tra_err_siz_df <- data.frame(matrix(NA, nrow=1, ncol=4))
-val_err_siz_df <- data.frame(matrix(NA, nrow=1, ncol=4))
-names(tra_err_siz_df) <- c("class","size", "fold", "error")
-names(val_err_siz_df) <- c("class","size", "fold", "error")
+tra_err_siz_df <- data.frame()
+val_err_siz_df <- data.frame()
 
 # Results of Width Binning
-tra_err_wid_df <- data.frame(matrix(NA, nrow=1, ncol=4))
-val_err_wid_df <- data.frame(matrix(NA, nrow=1, ncol=4))
-names(tra_err_wid_df) <- c("class","width", "fold", "error")
-names(val_err_wid_df) <- c("class","width", "fold", "error")
+tra_err_wid_df <- data.frame()
+val_err_wid_df <- data.frame()
 
 for(i in seq_along(CLASS_NAMES)){
     print(sprintf('Creating plots for class[%i] = %s', i, CLASS_NAMES[i]))
@@ -276,11 +274,15 @@ for(i in seq_along(CLASS_NAMES)){
         # Original error on Training fold
         error <- brier_score(bin$prob[train_idx], target[train_idx])
         new_row <- c(class_name, method, fold_id, error)
+        new_row <- data.frame(class=class_name, method=method, fold=fold_id,
+                              error=error)
         tra_err_oth_df <- rbind(tra_err_oth_df, new_row)
 
         # Original error on Validation fold
         error <- brier_score(bin$prob[valid_idx], target[valid_idx])
         new_row <- c(class_name, method, fold_id, error)
+        new_row <- data.frame(class=class_name, method=method, fold=fold_id,
+                              error=error)
         val_err_oth_df <- rbind(val_err_oth_df, new_row)
 
         print(tail(tra_err_oth_df,1))
@@ -304,14 +306,16 @@ for(i in seq_along(CLASS_NAMES)){
         predictions <- predict(glm_out, newdata=data.frame(
                           score=tra_fold_scores), type='response')
         error <- brier_score(predictions, tra_fold_target)
-        new_row <- c(class_name, method, fold_id, error)
+        new_row <- data.frame(class=class_name, method=method, fold=fold_id,
+                              error=error)
         tra_err_oth_df <- rbind(tra_err_oth_df, new_row)
 
         # Validation Error
         predictions <- predict(glm_out, newdata=data.frame(
                           score=val_fold_scores), type='response')
         error <- brier_score(predictions, val_fold_target)
-        new_row <- c(class_name, method, fold_id, error)
+        new_row <- data.frame(class=class_name, method=method, fold=fold_id,
+                              error=error)
         val_err_oth_df <- rbind(val_err_oth_df, new_row)
 
         print(tail(tra_err_oth_df,1))
@@ -333,14 +337,16 @@ for(i in seq_along(CLASS_NAMES)){
         predictions <- predict(glm_out, newdata=data.frame(
                           score=tra_fold_scores), type='response')
         error <- brier_score(predictions, tra_fold_target)
-        new_row <- c(class_name, method, fold_id, error)
+        new_row <- data.frame(class=class_name, method=method, fold=fold_id,
+                              error=error)
         tra_err_oth_df <- rbind(tra_err_oth_df, new_row)
 
         # Validation Error
         predictions <- predict(glm_out, newdata=data.frame(
                           score=val_fold_scores), type='response')
         error <- brier_score(predictions, val_fold_target)
-        new_row <- c(class_name, method, fold_id, error)
+        new_row <- data.frame(class=class_name, method=method, fold=fold_id,
+                              error=error)
         val_err_oth_df <- rbind(val_err_oth_df, new_row)
 
         print(tail(tra_err_oth_df,1))
@@ -362,14 +368,16 @@ for(i in seq_along(CLASS_NAMES)){
         predictions <- predict(glm_out, newdata=data.frame(
                           score=tra_fold_scores), type='response')
         error <- brier_score(predictions, tra_fold_target)
-        new_row <- c(class_name, method, fold_id, error)
+        new_row <- data.frame(class=class_name, method=method, fold=fold_id,
+                              error=error)
         tra_err_oth_df <- rbind(tra_err_oth_df, new_row)
 
         # Validation Error
         predictions <- predict(glm_out, newdata=data.frame(
                           score=val_fold_scores), type='response')
         error <- brier_score(predictions, val_fold_target)
-        new_row <- c(class_name, method, fold_id, error)
+        new_row <- data.frame(class=class_name, method=method, fold=fold_id,
+                              error=error)
         val_err_oth_df <- rbind(val_err_oth_df, new_row)
 
         print(tail(tra_err_oth_df,1))
@@ -389,13 +397,15 @@ for(i in seq_along(CLASS_NAMES)){
         # Training Error
         predictions <- fits.isoreg(isoreg_out, score[train_idx])
         error <- brier_score(predictions, target[train_idx])
-        new_row <- c(class_name, method, fold_id, error)
+        new_row <- data.frame(class=class_name, method=method, fold=fold_id,
+                              error=error)
         tra_err_oth_df <- rbind(tra_err_oth_df, new_row)
 
         # Validation Error
         predictions <- fits.isoreg(isoreg_out, score[valid_idx])
         error <- brier_score(predictions, target[valid_idx])
-        new_row <- c(class_name, method, fold_id, error)
+        new_row <- data.frame(class=class_name, method=method, fold=fold_id,
+                              error=error)
         val_err_oth_df <- rbind(val_err_oth_df, new_row)
 
         print(tail(tra_err_oth_df,1))
@@ -414,14 +424,16 @@ for(i in seq_along(CLASS_NAMES)){
             prediction <- cal$score[findInterval(score[train_idx],cal$breaks,
                                                  all.inside=TRUE)]
             error <- brier_score(prediction,target[train_idx])
-            new_row <- c(class_name, number_bins, fold_id, error)
+            new_row <- data.frame(class=class_name, bins=number_bins,
+                                  fold=fold_id, error=error)
             tra_err_wid_df <- rbind(tra_err_wid_df, new_row)
 
             # Validation error
             prediction <- cal$score[findInterval(score[valid_idx],cal$breaks,
                                                  all.inside=TRUE)]
             error <- brier_score(prediction,target[valid_idx])
-            new_row <- c(class_name, number_bins, fold_id, error)
+            new_row <- data.frame(class=class_name, bins=number_bins,
+                                  fold=fold_id, error=error)
             val_err_wid_df <- rbind(val_err_wid_df, new_row)
 
             print(tail(tra_err_wid_df,1))
@@ -440,14 +452,16 @@ for(i in seq_along(CLASS_NAMES)){
             prediction <- cal$score[findInterval(score[train_idx],cal$breaks,
                                                  all.inside=TRUE)]
             error <- brier_score(prediction,target[train_idx])
-            new_row <- c(class_name, number_bins, fold_id, error)
+            new_row <- data.frame(class=class_name, bins=number_bins,
+                                  fold=fold_id, error=error)
             tra_err_siz_df <- rbind(tra_err_siz_df, new_row)
 
             # Validation error
             prediction <- cal$score[findInterval(score[valid_idx],cal$breaks,
                                                  all.inside=TRUE)]
             error <- brier_score(prediction,target[valid_idx])
-            new_row <- c(class_name, number_bins, fold_id, error)
+            new_row <- data.frame(class=class_name, bins=number_bins,
+                                  fold=fold_id, error=error)
             val_err_siz_df <- rbind(val_err_siz_df, new_row)
 
             print(tail(tra_err_siz_df,1))
@@ -456,15 +470,28 @@ for(i in seq_along(CLASS_NAMES)){
     }
 }
 
+# Change Variable Names
+names(tra_err_oth_df) <- c("class","method", "fold", "error")
+names(val_err_oth_df) <- c("class","method", "fold", "error")
+names(tra_err_siz_df) <- c("class","size", "fold", "error")
+names(val_err_siz_df) <- c("class","size", "fold", "error")
+names(tra_err_wid_df) <- c("class","width", "fold", "error")
+names(val_err_wid_df) <- c("class","width", "fold", "error")
+
 # Training errors
 print(tra_err_oth_df)
 print(tra_err_wid_df)
 print(tra_err_siz_df)
 
-ggplot(tra_err_oth_df, aes(error, fill=class), environment=environment()) +
-       ggtitle("Training error other methods")
+qplot(method, error, data=tra_err_oth_df)
+qplot((train_instances-valid_instances)/size, error, data=tra_err_siz_df)
+qplot(1/width, error, data=tra_err_wid_df)
+
+ggplot(tra_err_oth_df, aes(x=method, y=error, fill=method)) + geom_boxplot()
 
 # Validation errors
 print(val_err_oth_df)
 print(val_err_wid_df)
 print(val_err_siz_df)
+ggplot(val_err_oth_df, aes(x=method, y=error, fill=method)) + geom_boxplot()
+ggplot(val_err_siz_df, aes(x=size, y=error, fill=size)) + geom_boxplot()
